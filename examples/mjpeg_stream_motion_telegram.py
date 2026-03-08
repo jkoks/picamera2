@@ -3,11 +3,12 @@
 # Camera MJPEG streaming server with motion detection and Telegram notifications.
 #
 # Combines:
-#   - mjpeg_server.py       (MJPEG HTTP streaming)
+#   - mjpeg_server.py             (MJPEG HTTP streaming)
+#   - mjpeg_server_with_rotation.py (EXIF-based stream rotation)
 #   - capture_motion_improved.py  (frame-diff motion detection)
 #
 # Setup:
-#   pip3 install simplejpeg requests
+#   pip3 install simplejpeg requests piexif
 #
 # Configuration (edit the constants below or export as env vars):
 #   TELEGRAM_BOT_TOKEN  - your bot token from @BotFather
@@ -28,6 +29,7 @@ from http import server
 from threading import Condition, Thread
 
 import numpy as np
+import piexif
 import requests
 
 from picamera2 import Picamera2
@@ -56,18 +58,23 @@ MOTION_STOP_DELAY = 2.0
 # Minimum seconds between successive Telegram notifications (avoid spam)
 TELEGRAM_COOLDOWN = 10.0
 
+# Stream rotation: 0, 90, 180, or 270 degrees (uses EXIF orientation header)
+STREAM_ROTATION = 0
+
 # ---------------------------------------------------------------------------
 # HTML page served at /index.html
 # ---------------------------------------------------------------------------
 
-PAGE = """\
+_W, _H = (480, 640) if STREAM_ROTATION in (90, 270) else (640, 480)
+
+PAGE = f"""\
 <html>
 <head>
   <title>Picamera2 – Motion Alert Stream</title>
 </head>
 <body>
   <h1>Picamera2 – Motion Alert Stream</h1>
-  <img src="stream.mjpg" width="640" height="480" />
+  <img src="stream.mjpg" width="{_W}" height="{_H}" />
 </body>
 </html>
 """
@@ -76,8 +83,27 @@ PAGE = """\
 # Streaming output (shared between encoder and HTTP handler)
 # ---------------------------------------------------------------------------
 
+def _build_rotation_header(rotation: int) -> bytes:
+    """Build an EXIF APP1 segment that encodes the requested JPEG orientation."""
+    if not rotation:
+        return b""
+    code = {90: 6, 180: 3, 270: 8}[rotation]
+    exif_bytes = piexif.dump({"0th": {piexif.ImageIFD.Orientation: code}})
+    exif_len = len(exif_bytes) + 2  # +2 for the length field itself
+    return bytes.fromhex("ffe1") + exif_len.to_bytes(2, "big") + exif_bytes
+
+
+# Pre-computed once at startup; empty when STREAM_ROTATION == 0
+_ROTATION_HEADER = _build_rotation_header(STREAM_ROTATION)
+
+
 class StreamingOutput(io.BufferedIOBase):
-    """Thread-safe buffer that holds the latest JPEG frame."""
+    """Thread-safe buffer that holds the latest JPEG frame.
+
+    When STREAM_ROTATION is non-zero, an EXIF orientation header is injected
+    into every frame so that browsers and players rotate the image correctly.
+    Supported values: 0 (no rotation), 90, 180, 270.
+    """
 
     def __init__(self):
         self.frame = None
@@ -85,7 +111,9 @@ class StreamingOutput(io.BufferedIOBase):
 
     def write(self, buf):
         with self.condition:
-            self.frame = buf
+            # Inject rotation header between the SOI marker (first 2 bytes)
+            # and the rest of the JPEG data
+            self.frame = buf[:2] + _ROTATION_HEADER + buf[2:] if _ROTATION_HEADER else buf
             self.condition.notify_all()
 
 
