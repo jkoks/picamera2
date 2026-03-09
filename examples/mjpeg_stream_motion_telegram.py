@@ -219,9 +219,16 @@ def send_telegram_photo(jpeg_bytes: bytes, caption: str = "") -> None:
 
 def notify_motion(snapshot_jpeg: bytes) -> None:
     """Fire-and-forget Telegram notification in a background thread."""
-    caption = f"Motion detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
-    Thread(target=send_telegram_photo, args=(snapshot_jpeg, caption),
-           daemon=True).start()
+    def _send():
+        try:
+            caption = f"Motion detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            img = Image.open(io.BytesIO(snapshot_jpeg)).rotate(180)
+            buf = io.BytesIO()
+            img.save(buf, format="jpeg")
+            send_telegram_photo(buf.getvalue(), caption)
+        except Exception as e:
+            logging.warning("notify_motion failed: %s", e)
+    Thread(target=_send, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -292,15 +299,13 @@ def main():
                     now = time.time()
                     if now - last_notify_time > TELEGRAM_COOLDOWN:
                         last_notify_time = now
-                        # Use the latest MJPEG frame directly – avoids the
-                        # blocking capture_file() call that pauses the stream.
-                        with stream_output.condition:
-                            jpeg_bytes = stream_output.frame
-                        if jpeg_bytes:
-                            img = Image.open(io.BytesIO(jpeg_bytes)).rotate(180)
-                            rotated_buf = io.BytesIO()
-                            img.save(rotated_buf, format="jpeg")
-                            notify_motion(rotated_buf.getvalue())
+                        try:
+                            with stream_output.condition:
+                                jpeg_bytes = stream_output.frame
+                            if jpeg_bytes:
+                                notify_motion(jpeg_bytes)
+                        except Exception as e:
+                            logging.warning("Failed to grab snapshot: %s", e)
 
                 else:
                     if encoding and (time.time() - last_motion_time) > MOTION_STOP_DELAY:
