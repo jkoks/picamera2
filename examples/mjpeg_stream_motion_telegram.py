@@ -275,12 +275,10 @@ def main():
                     now = time.time()
                     if now - last_notify_time > TELEGRAM_COOLDOWN:
                         last_notify_time = now
-                        # Grab a full-resolution JPEG snapshot for the notification
-                        snapshot = picam2.capture_array("main")
-                        # Re-encode snapshot as JPEG using the streaming output buffer
-                        with stream_output.condition:
-                            stream_output.condition.wait(timeout=1.0)
-                            jpeg_bytes = stream_output.frame
+                        # Capture a fresh JPEG at the moment motion is detected
+                        snapshot_buf = io.BytesIO()
+                        picam2.capture_file(snapshot_buf, format="jpeg")
+                        jpeg_bytes = snapshot_buf.getvalue()
                         if jpeg_bytes:
                             notify_motion(jpeg_bytes)
 
