@@ -276,16 +276,15 @@ def main():
                     now = time.time()
                     if now - last_notify_time > TELEGRAM_COOLDOWN:
                         last_notify_time = now
-                        # Capture a fresh JPEG at the moment motion is detected
-                        snapshot_buf = io.BytesIO()
-                        picam2.capture_file(snapshot_buf, format="jpeg")
-                        snapshot_buf.seek(0)
-                        img = Image.open(snapshot_buf).rotate(180)
-                        rotated_buf = io.BytesIO()
-                        img.save(rotated_buf, format="jpeg")
-                        jpeg_bytes = rotated_buf.getvalue()
+                        # Use the latest MJPEG frame directly – avoids the
+                        # blocking capture_file() call that pauses the stream.
+                        with stream_output.condition:
+                            jpeg_bytes = stream_output.frame
                         if jpeg_bytes:
-                            notify_motion(jpeg_bytes)
+                            img = Image.open(io.BytesIO(jpeg_bytes)).rotate(180)
+                            rotated_buf = io.BytesIO()
+                            img.save(rotated_buf, format="jpeg")
+                            notify_motion(rotated_buf.getvalue())
 
                 else:
                     if encoding and (time.time() - last_motion_time) > MOTION_STOP_DELAY:
