@@ -8,7 +8,7 @@
 #   - capture_motion_improved.py  (frame-diff motion detection)
 #
 # Setup:
-#   pip3 install simplejpeg requests piexif
+#   pip3 install simplejpeg requests piexif pillow
 #
 # Configuration (edit the constants below or export as env vars):
 #   TELEGRAM_BOT_TOKEN  - your bot token from @BotFather
@@ -31,6 +31,7 @@ from threading import Condition, Thread
 import numpy as np
 import piexif
 import requests
+from PIL import Image
 
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder, JpegEncoder
@@ -278,7 +279,11 @@ def main():
                         # Capture a fresh JPEG at the moment motion is detected
                         snapshot_buf = io.BytesIO()
                         picam2.capture_file(snapshot_buf, format="jpeg")
-                        jpeg_bytes = snapshot_buf.getvalue()
+                        snapshot_buf.seek(0)
+                        img = Image.open(snapshot_buf).rotate(180)
+                        rotated_buf = io.BytesIO()
+                        img.save(rotated_buf, format="jpeg")
+                        jpeg_bytes = rotated_buf.getvalue()
                         if jpeg_bytes:
                             notify_motion(jpeg_bytes)
 
