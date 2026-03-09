@@ -309,7 +309,7 @@ def main():
 
                 else:
                     if encoding and (time.time() - last_motion_time) > MOTION_STOP_DELAY:
-                        picam2.stop_encoder()
+                        picam2.stop_encoder(h264_encoder)
                         encoding = False
                         logging.info("Motion stopped – recording saved.")
 
@@ -319,7 +319,7 @@ def main():
         logging.info("Shutting down…")
     finally:
         if encoding:
-            picam2.stop_encoder()
+            picam2.stop_encoder(h264_encoder)
         picam2.stop_recording()
         http_server.shutdown()
 
