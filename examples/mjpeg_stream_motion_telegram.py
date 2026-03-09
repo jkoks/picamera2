@@ -10,9 +10,9 @@
 # Setup:
 #   pip3 install simplejpeg requests piexif pillow
 #
-# Configuration (edit the constants below or export as env vars):
-#   TELEGRAM_BOT_TOKEN  - your bot token from @BotFather
-#   TELEGRAM_CHAT_ID    - the chat/group ID to send alerts to
+# Configuration (in order of precedence):
+#   1. examples/telegram.conf  (copy the template and fill in your values)
+#   2. Environment variables:  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 #
 # Run:
 #   python3 mjpeg_stream_motion_telegram.py
@@ -20,12 +20,14 @@
 # Then open http://<pi-ip>:8000 in a browser to watch the live stream.
 # A Telegram message + snapshot is sent whenever motion is detected.
 
+import configparser
 import io
 import logging
 import os
 import socketserver
 import time
 from http import server
+from pathlib import Path
 from threading import Condition, Thread
 
 import numpy as np
@@ -41,8 +43,22 @@ from picamera2.outputs import FileOutput, PyavOutput
 # Configuration
 # ---------------------------------------------------------------------------
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID",   "YOUR_CHAT_ID_HERE")
+def _load_telegram_config() -> tuple[str, str]:
+    """Return (bot_token, chat_id) from telegram.conf, then env vars, then placeholders."""
+    conf_path = Path(__file__).parent / "telegram.conf"
+    if conf_path.exists():
+        cfg = configparser.ConfigParser()
+        cfg.read(conf_path)
+        token = cfg.get("telegram", "bot_token", fallback="")
+        chat  = cfg.get("telegram", "chat_id",   fallback="")
+        if token and "YOUR_BOT_TOKEN" not in token:
+            return token, chat
+    return (
+        os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE"),
+        os.environ.get("TELEGRAM_CHAT_ID",   "YOUR_CHAT_ID_HERE"),
+    )
+
+TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID = _load_telegram_config()
 
 # HTTP streaming port
 STREAM_PORT = 8000

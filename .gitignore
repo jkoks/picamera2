@@ -47,6 +47,7 @@ docs/_build/
 
 # Other
 *~
+examples/telegram.conf
 /.idea
 .idea
 /.spyproject
