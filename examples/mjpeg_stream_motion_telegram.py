@@ -289,7 +289,7 @@ def main():
 
                     if not encoding:
                         # Start recording the motion clip
-                        filename = f"{int(time.time())}.mp4"
+                        filename = time.strftime("%y-%m-%d_%H:%M") + ".mp4"
                         h264_encoder.output = PyavOutput(filename)
                         picam2.start_encoder(h264_encoder)
                         encoding = True
