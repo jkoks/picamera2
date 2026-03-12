@@ -76,21 +76,21 @@ MOTION_STOP_DELAY = 2.0
 TELEGRAM_COOLDOWN = 10.0
 
 # Stream rotation: 0, 90, 180, or 270 degrees (uses EXIF orientation header)
-STREAM_ROTATION = 0
+STREAM_ROTATION = 180
 
 # ---------------------------------------------------------------------------
 # HTML page served at /index.html
 # ---------------------------------------------------------------------------
 
-_W, _H = (480, 640) if STREAM_ROTATION in (90, 270) else (640, 480)
+_W, _H = (480, 640) if STREAM_ROTATION in (90, 270) else (960, 720)
 
 PAGE = f"""\
 <html>
 <head>
-  <title>Picamera2 – Motion Alert Stream</title>
+  <title>Voordeur</title>
 </head>
 <body>
-  <h1>Picamera2 – Motion Alert Stream</h1>
+  <h1>Voordeur</h1>
   <img src="stream.mjpg" width="{_W}" height="{_H}" />
 </body>
 </html>
