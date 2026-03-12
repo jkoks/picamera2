@@ -36,7 +36,7 @@ import requests
 from PIL import Image
 
 from picamera2 import Picamera2
-from picamera2.encoders import H264Encoder, JpegEncoder
+from picamera2.encoders import JpegEncoder, MJPEGEncoder
 from picamera2.outputs import FileOutput, PyavOutput
 
 # ---------------------------------------------------------------------------
@@ -261,8 +261,8 @@ def main():
     picam2.start_recording(JpegEncoder(), FileOutput(stream_output))
     logging.info("Camera started – MJPEG stream available at http://<pi-ip>:%d", STREAM_PORT)
 
-    # H.264 encoder for saving motion clips (shared, re-used for each event)
-    h264_encoder = H264Encoder(bitrate=1000000)
+    # MJPEG encoder for saving motion clips (shared, re-used for each event)
+    mjpeg_encoder = MJPEGEncoder()
 
     # --- HTTP server in background thread ------------------------------------
     http_server = StreamingServer(('', STREAM_PORT), StreamingHandler)
@@ -290,8 +290,8 @@ def main():
                     if not encoding:
                         # Start recording the motion clip
                         filename = time.strftime("%y-%m-%d_%H:%M") + ".mp4"
-                        h264_encoder.output = PyavOutput(filename)
-                        picam2.start_encoder(h264_encoder)
+                        mjpeg_encoder.output = PyavOutput(filename)
+                        picam2.start_encoder(mjpeg_encoder)
                         encoding = True
                         logging.info("Motion detected (MSE=%.1f) – recording %s", mse, filename)
 
@@ -309,7 +309,7 @@ def main():
 
                 else:
                     if encoding and (time.time() - last_motion_time) > MOTION_STOP_DELAY:
-                        picam2.stop_encoder(h264_encoder)
+                        picam2.stop_encoder(mjpeg_encoder)
                         encoding = False
                         logging.info("Motion stopped – recording saved.")
 
@@ -319,7 +319,7 @@ def main():
         logging.info("Shutting down…")
     finally:
         if encoding:
-            picam2.stop_encoder(h264_encoder)
+            picam2.stop_encoder(mjpeg_encoder)
         picam2.stop_recording()
         http_server.shutdown()
 
