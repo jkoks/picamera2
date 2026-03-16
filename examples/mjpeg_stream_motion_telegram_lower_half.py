@@ -283,9 +283,11 @@ def main():
             cur = picam2.capture_array("lores")[:h, :w]
 
             if prev is not None:
-                # Only analyse the lower half of the frame
+                # Only analyse the lower half of the displayed image.
+                # Because STREAM_ROTATION=180 flips the frame, the raw top half
+                # corresponds to the displayed bottom half.
                 half = h // 2
-                mse = np.square(np.subtract(cur[half:], prev[half:])).mean()
+                mse = np.square(np.subtract(cur[:half], prev[:half])).mean()
 
                 if mse > MOTION_THRESHOLD:
                     last_motion_time = time.time()
