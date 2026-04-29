@@ -29,7 +29,7 @@ import socketserver
 import time
 from http import server
 from pathlib import Path
-from threading import Condition, Thread
+from threading import Condition, Event, Thread
 
 import numpy as np
 import piexif
@@ -189,6 +189,13 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
 
 
 # ---------------------------------------------------------------------------
+# Notification pause state (toggled by /pause and /resume Telegram commands)
+# ---------------------------------------------------------------------------
+
+_notifications_paused = Event()  # set = paused, clear = active
+
+
+# ---------------------------------------------------------------------------
 # Telegram helpers
 # ---------------------------------------------------------------------------
 
@@ -221,6 +228,8 @@ def send_telegram_photo(jpeg_bytes: bytes, caption: str = "") -> None:
 def notify_motion(snapshot_jpeg: bytes) -> None:
     """Fire-and-forget Telegram notification in a background thread."""
     def _send():
+        if _notifications_paused.is_set():
+            return
         try:
             caption = f"Motion detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
             img = Image.open(io.BytesIO(snapshot_jpeg)).rotate(180)
@@ -230,6 +239,31 @@ def notify_motion(snapshot_jpeg: bytes) -> None:
         except Exception as e:
             logging.warning("notify_motion failed: %s", e)
     Thread(target=_send, daemon=True).start()
+
+
+def poll_telegram_commands() -> None:
+    """Background thread: long-poll getUpdates and handle /pause and /resume."""
+    offset = 0
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    while True:
+        try:
+            resp = requests.get(url, params={"timeout": 30, "offset": offset}, timeout=35)
+            resp.raise_for_status()
+            for update in resp.json().get("result", []):
+                offset = update["update_id"] + 1
+                text = update.get("message", {}).get("text", "").strip().lower()
+                chat_id = update.get("message", {}).get("chat", {}).get("id")
+                if text == "/pause":
+                    _notifications_paused.set()
+                    send_telegram_message("Notifications paused. Send /resume to re-enable.")
+                    logging.info("Telegram: notifications paused by user")
+                elif text == "/resume":
+                    _notifications_paused.clear()
+                    send_telegram_message("Notifications resumed.")
+                    logging.info("Telegram: notifications resumed by user")
+        except Exception as e:
+            logging.warning("Telegram poll error: %s", e)
+            time.sleep(5)
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +303,10 @@ def main():
     http_server = StreamingServer(('', STREAM_PORT), StreamingHandler)
     Thread(target=http_server.serve_forever, daemon=True).start()
     logging.info("HTTP server running on port %d", STREAM_PORT)
+
+    # --- Telegram command listener -------------------------------------------
+    Thread(target=poll_telegram_commands, daemon=True).start()
+    logging.info("Telegram command listener started (/pause, /resume)")
 
     # --- Motion detection loop -----------------------------------------------
     w, h = lsize
