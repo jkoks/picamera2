@@ -65,7 +65,7 @@ TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID = _load_telegram_config()
 STREAM_PORT = 8000
 
 # Main stream resolution for MJPEG HTTP streaming (~3MP, 16:9)
-STREAM_SIZE = (2304, 1296)
+STREAM_SIZE = (2304, 1269)
 
 # Lores stream resolution used for saved motion clips (1080p)
 RECORD_SIZE = (1920, 1080)
@@ -291,6 +291,7 @@ def main():
     stream_output = StreamingOutput()
 
     picam2 = Picamera2()
+    picam2.set_controls({"AfMode": 2, "AfTrigger": 0})
     hdr_controls = {"HdrMode": 3} if STREAM_HDR else {}  # 3 = SingleExposure HDR
     video_config = picam2.create_video_configuration(
         main={"size": STREAM_SIZE, "format": "RGB888"},
