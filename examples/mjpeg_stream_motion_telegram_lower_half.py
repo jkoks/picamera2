@@ -91,17 +91,17 @@ STREAM_ROTATION = 180
 
 _W, _H = (STREAM_SIZE[1], STREAM_SIZE[0]) if STREAM_ROTATION in (90, 270) else STREAM_SIZE
 
-PAGE = f"""\
+PAGE = """\
 <html>
 <head>
   <title>Voordeur</title>
 </head>
 <body>
   <h1>Voordeur</h1>
-  <img src="stream.mjpg" width="{_W}" height="{_H}" />
+  <img src="stream.mjpg" width="{w}" height="{h}" />
 </body>
 </html>
-"""
+""".format(w=_W, h=_H)
 
 # ---------------------------------------------------------------------------
 # Streaming output (shared between encoder and HTTP handler)
