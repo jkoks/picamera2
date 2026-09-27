@@ -88,19 +88,22 @@ STREAM_ROTATION = 180
 # HTML page served at /index.html
 # ---------------------------------------------------------------------------
 
-_W, _H = (STREAM_SIZE[1], STREAM_SIZE[0]) if STREAM_ROTATION in (90, 270) else STREAM_SIZE
-
 PAGE = """\
 <html>
 <head>
   <title>Voordeur</title>
+  <style>
+    body { margin: 0; background: #000; }
+    h1 { color: #fff; font-family: sans-serif; padding: 8px 12px; margin: 0; }
+    img { display: block; width: 100%; height: auto; }
+  </style>
 </head>
 <body>
   <h1>Voordeur</h1>
-  <img src="stream.mjpg" width="{w}" height="{h}" />
+  <img src="stream.mjpg" />
 </body>
 </html>
-""".format(w=_W, h=_H)
+"""
 
 # ---------------------------------------------------------------------------
 # Streaming output (shared between encoder and HTTP handler)
