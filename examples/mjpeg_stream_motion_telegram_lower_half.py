@@ -320,7 +320,9 @@ def main():
     logging.info("Telegram command listener started (/pause, /resume)")
 
     # --- Motion detection loop -----------------------------------------------
-    # Downsample the 1080p lores Y-plane by 6 → ~320×180 for motion analysis.
+    # Mean-pool the 1080p lores Y-plane into 6×6 blocks → ~320×180.
+    # Averaging 36 pixels per output pixel suppresses sensor noise (high at night)
+    # so only real scene changes push the MSE above the threshold.
     # With STREAM_ROTATION=180, raw top half = displayed bottom half.
     rw, rh = RECORD_SIZE
     prev = None
@@ -331,9 +333,9 @@ def main():
 
     try:
         while True:
-            # Grab lores Y-plane and downsample for cheap motion analysis
+            # Grab lores Y-plane and mean-pool for cheap, noise-resistant analysis
             cur_y = picam2.capture_array("lores")[:rh, :rw]
-            cur = cur_y[::6, ::6]
+            cur = cur_y.reshape(rh // 6, 6, rw // 6, 6).mean(axis=(1, 3))
 
             if prev is not None:
                 # Only analyse the lower half of the displayed image.
