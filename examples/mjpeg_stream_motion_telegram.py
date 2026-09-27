@@ -63,14 +63,20 @@ TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID = _load_telegram_config()
 # HTTP streaming port
 STREAM_PORT = 8000
 
-# Low-resolution size used only for motion analysis (keeps CPU load low)
-LORES_SIZE = (320, 240)
+# Main stream resolution for MJPEG HTTP streaming (~3MP, 16:9)
+STREAM_SIZE = (2304, 1296)
+
+# Lores stream resolution used for saved motion clips (1080p)
+RECORD_SIZE = (1920, 1080)
+
+# Enable HDR mode (requires Camera Module 3 or compatible sensor)
+STREAM_HDR = True
 
 # Motion sensitivity: higher value → less sensitive (range roughly 1–50)
 MOTION_THRESHOLD = 7
 
-# Seconds of no-motion before the video recording stops
-MOTION_STOP_DELAY = 2.0
+# Fixed duration of each saved motion clip in seconds
+MOTION_CLIP_DURATION = 5.0
 
 # Minimum seconds between successive Telegram notifications (avoid spam)
 TELEGRAM_COOLDOWN = 10.0
@@ -82,7 +88,7 @@ STREAM_ROTATION = 180
 # HTML page served at /index.html
 # ---------------------------------------------------------------------------
 
-_W, _H = (480, 640) if STREAM_ROTATION in (90, 270) else (960, 720)
+_W, _H = (STREAM_SIZE[1], STREAM_SIZE[0]) if STREAM_ROTATION in (90, 270) else STREAM_SIZE
 
 PAGE = f"""\
 <html>
@@ -284,18 +290,19 @@ def main():
     stream_output = StreamingOutput()
 
     picam2 = Picamera2()
-    lsize = LORES_SIZE
+    hdr_controls = {"HdrMode": 3} if STREAM_HDR else {}  # 3 = SingleExposure HDR
     video_config = picam2.create_video_configuration(
-        main={"size": (640, 480), "format": "RGB888"},
-        lores={"size": lsize, "format": "YUV420"},
+        main={"size": STREAM_SIZE, "format": "RGB888"},
+        lores={"size": RECORD_SIZE, "format": "YUV420"},
+        controls=hdr_controls,
     )
     picam2.configure(video_config)
 
     # MJPEG stream encoder → StreamingOutput
     picam2.start_recording(JpegEncoder(), FileOutput(stream_output))
-    logging.info("Camera started – MJPEG stream available at http://<pi-ip>:%d", STREAM_PORT)
+    logging.info("Camera started (HDR=%s) – stream at http://<pi-ip>:%d", STREAM_HDR, STREAM_PORT)
 
-    # MJPEG encoder for saving motion clips (shared, re-used for each event)
+    # MJPEG encoder for saving motion clips from the 1080p lores stream
     mjpeg_encoder = MJPEGEncoder()
 
     # --- HTTP server in background thread ------------------------------------
@@ -308,30 +315,31 @@ def main():
     logging.info("Telegram command listener started (/pause, /resume)")
 
     # --- Motion detection loop -----------------------------------------------
-    w, h = lsize
+    # Downsample the 1080p lores Y-plane by 6 → ~320×180 for motion analysis
+    rw, rh = RECORD_SIZE
     prev = None
     encoding = False
-    last_motion_time = 0.0
+    encoding_start = 0.0
+    current_filename = ""
     last_notify_time = 0.0
 
     try:
         while True:
-            # Grab low-resolution frame for motion analysis
-            cur = picam2.capture_array("lores")[:h, :w]
+            # Grab lores Y-plane and downsample for cheap motion analysis
+            cur_y = picam2.capture_array("lores")[:rh, :rw]
+            cur = cur_y[::6, ::6]
 
             if prev is not None:
                 mse = np.square(np.subtract(cur, prev)).mean()
 
                 if mse > MOTION_THRESHOLD:
-                    last_motion_time = time.time()
-
                     if not encoding:
-                        # Start recording the motion clip
-                        filename = time.strftime("%y-%m-%d_%H:%M") + ".mp4"
-                        mjpeg_encoder.output = PyavOutput(filename)
-                        picam2.start_encoder(mjpeg_encoder)
+                        current_filename = time.strftime("%y-%m-%d_%H:%M") + ".mp4"
+                        mjpeg_encoder.output = PyavOutput(current_filename)
+                        picam2.start_encoder(mjpeg_encoder, name="lores")
                         encoding = True
-                        logging.info("Motion detected (MSE=%.1f) – recording %s", mse, filename)
+                        encoding_start = time.time()
+                        logging.info("Motion detected (MSE=%.1f) – recording %s", mse, current_filename)
 
                     # Send Telegram snapshot (rate-limited)
                     now = time.time()
@@ -345,11 +353,11 @@ def main():
                         except Exception as e:
                             logging.warning("Failed to grab snapshot: %s", e)
 
-                else:
-                    if encoding and (time.time() - last_motion_time) > MOTION_STOP_DELAY:
-                        picam2.stop_encoder(mjpeg_encoder)
-                        encoding = False
-                        logging.info("Motion stopped – recording saved.")
+            # Stop recording after fixed clip duration
+            if encoding and (time.time() - encoding_start) >= MOTION_CLIP_DURATION:
+                picam2.stop_encoder(mjpeg_encoder)
+                encoding = False
+                logging.info("Recording saved – %s", current_filename)
 
             prev = cur
 
