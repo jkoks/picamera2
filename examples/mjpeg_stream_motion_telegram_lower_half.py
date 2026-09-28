@@ -338,10 +338,14 @@ def main():
             cur = cur_y.reshape(rh // 6, 6, rw // 6, 6).mean(axis=(1, 3))
 
             if prev is not None:
-                # Only analyse the lower half of the displayed image.
-                # Because STREAM_ROTATION=180 the raw top half = displayed bottom.
-                half = cur.shape[0] // 2
-                mse = np.square(np.subtract(cur[:half], prev[:half])).mean()
+                # Only analyse the lower-right quarter of the displayed image.
+                # With STREAM_ROTATION=180 the mapping inverts both axes:
+                #   raw top-left  → displayed bottom-right  (the zone we watch)
+                half_h = cur.shape[0] // 2
+                half_w = cur.shape[1] // 2
+                roi_cur  = cur[:half_h, :half_w]
+                roi_prev = prev[:half_h, :half_w]
+                mse = np.square(np.subtract(roi_cur, roi_prev)).mean()
 
                 if mse > MOTION_THRESHOLD:
                     if not encoding:
