@@ -365,6 +365,9 @@ def main():
                 logging.info("Recording saved – %s", current_filename)
 
             prev = cur
+            # Analyse at ~10 fps — plenty for motion detection and cuts CPU ~3×
+            # compared to running at full camera framerate.
+            time.sleep(0.1)
 
     except KeyboardInterrupt:
         logging.info("Shutting down…")
