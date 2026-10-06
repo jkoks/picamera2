@@ -135,12 +135,14 @@ class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
         self.frame = None
         self.condition = Condition()
+        self.last_frame_time = time.monotonic()
 
     def write(self, buf):
         with self.condition:
             # Inject rotation header between the SOI marker (first 2 bytes)
             # and the rest of the JPEG data
             self.frame = buf[:2] + _ROTATION_HEADER + buf[2:] if _ROTATION_HEADER else buf
+            self.last_frame_time = time.monotonic()
             self.condition.notify_all()
 
 
@@ -176,8 +178,11 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
             try:
                 while True:
                     with stream_output.condition:
-                        stream_output.condition.wait()
+                        # Timeout prevents hanging forever if the camera encoder freezes
+                        stream_output.condition.wait(timeout=5.0)
                         frame = stream_output.frame
+                    if frame is None:
+                        continue
                     self.wfile.write(b'--FRAME\r\n')
                     self.send_header('Content-Type', 'image/jpeg')
                     self.send_header('Content-Length', len(frame))
@@ -318,6 +323,18 @@ def main():
     # --- Telegram command listener -------------------------------------------
     Thread(target=poll_telegram_commands, daemon=True).start()
     logging.info("Telegram command listener started (/pause, /resume)")
+
+    # --- Camera watchdog -----------------------------------------------------
+    # If the encoder stops producing frames for 30 s the process exits so it
+    # can be restarted automatically (e.g. via systemd Restart=always).
+    def _watchdog():
+        while True:
+            time.sleep(10)
+            age = time.monotonic() - stream_output.last_frame_time
+            if age > 30:
+                logging.error("Camera froze: no frame for %.0f s – exiting for restart", age)
+                os._exit(1)
+    Thread(target=_watchdog, daemon=True).start()
 
     # --- Motion detection loop -----------------------------------------------
     # Mean-pool the 1080p lores Y-plane into 6×6 blocks → ~320×180.
