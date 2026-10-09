@@ -364,14 +364,19 @@ def main():
                 roi_prev = prev[:half_h, :half_w]
                 mse = np.square(np.subtract(roi_cur, roi_prev)).mean()
 
+                logging.debug("MSE=%.2f", mse)
+
                 if mse > MOTION_THRESHOLD:
                     if not encoding:
                         current_filename = time.strftime("%y-%m-%d_%H:%M") + ".mp4"
-                        mjpeg_encoder.output = PyavOutput(current_filename)
-                        picam2.start_encoder(mjpeg_encoder, name="lores")
-                        encoding = True
-                        encoding_start = time.time()
-                        logging.info("Motion detected (MSE=%.1f) – recording %s", mse, current_filename)
+                        try:
+                            mjpeg_encoder.output = PyavOutput(current_filename)
+                            picam2.start_encoder(mjpeg_encoder, name="lores")
+                            encoding = True
+                            encoding_start = time.time()
+                            logging.info("Motion detected (MSE=%.1f) – recording %s", mse, current_filename)
+                        except Exception as e:
+                            logging.error("Failed to start recording %s: %s", current_filename, e)
 
                     # Send Telegram snapshot (rate-limited)
                     now = time.time()
@@ -387,9 +392,13 @@ def main():
 
             # Stop recording after fixed clip duration
             if encoding and (time.time() - encoding_start) >= MOTION_CLIP_DURATION:
-                picam2.stop_encoder(mjpeg_encoder)
-                encoding = False
-                logging.info("Recording saved – %s", current_filename)
+                try:
+                    picam2.stop_encoder(mjpeg_encoder)
+                    logging.info("Recording saved – %s", current_filename)
+                except Exception as e:
+                    logging.error("Failed to stop recording %s: %s", current_filename, e)
+                finally:
+                    encoding = False
 
             prev = cur
             # Analyse at ~10 fps — plenty for motion detection and cuts CPU ~3×
@@ -398,6 +407,8 @@ def main():
 
     except KeyboardInterrupt:
         logging.info("Shutting down…")
+    except Exception as e:
+        logging.error("Motion loop crashed: %s", e, exc_info=True)
     finally:
         if encoding:
             picam2.stop_encoder(mjpeg_encoder)
