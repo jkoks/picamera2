@@ -85,6 +85,9 @@ TELEGRAM_COOLDOWN = 10.0
 # Stream rotation: 0, 90, 180, or 270 degrees (uses EXIF orientation header)
 STREAM_ROTATION = 180
 
+# Directory where motion clips are saved (created automatically if missing)
+CLIP_DIR = "/home/john/clips"
+
 # ---------------------------------------------------------------------------
 # HTML page served at /index.html
 # ---------------------------------------------------------------------------
@@ -368,7 +371,8 @@ def main():
 
                 if mse > MOTION_THRESHOLD:
                     if not encoding:
-                        current_filename = time.strftime("%y-%m-%d_%H:%M") + ".mp4"
+                        os.makedirs(CLIP_DIR, exist_ok=True)
+                        current_filename = os.path.join(CLIP_DIR, time.strftime("%y-%m-%d_%H:%M") + ".mp4")
                         try:
                             mjpeg_encoder.output = PyavOutput(current_filename)
                             picam2.start_encoder(mjpeg_encoder, name="lores")
